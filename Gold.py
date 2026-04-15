@@ -6,7 +6,6 @@ import pandas as pd
 import plotly.express as px
 import yfinance as yf
 import re
-import os
 from fpdf import FPDF
 
 # --- CONFIGURATION ---
@@ -35,46 +34,52 @@ def fetch_bullion_co_in_rates():
         pass
     return rates
 
-# --- HISTORICAL DATA ---
+# --- HISTORICAL DATA (HOLIDAY PROOF) ---
 @st.cache_data(show_spinner=False)
 def get_historical_rate(date_obj, purity):
-    start = date_obj - datetime.timedelta(days=4)
+    # Widen the search window to 7 days to easily clear long weekends
+    start = date_obj - datetime.timedelta(days=7)
     end = date_obj + datetime.timedelta(days=1)
+    
     try:
         g = yf.Ticker("GC=F").history(start=start.strftime('%Y-%m-%d'), end=end.strftime('%Y-%m-%d'))
         curr = yf.Ticker("INR=X").history(start=start.strftime('%Y-%m-%d'), end=end.strftime('%Y-%m-%d'))
-        if g.empty or curr.empty: return 0.0
-        rate_24k = ((g['Close'].iloc[-1] * curr['Close'].iloc[-1]) / 31.1034) * 1.15
+        
+        if g.empty or curr.empty: 
+            return 0.0
+            
+        # Combine datasets and carry the last known price forward over weekends/holidays
+        combined = pd.DataFrame({'Gold': g['Close'], 'INR': curr['Close']}).ffill().dropna()
+        
+        if combined.empty:
+            return 0.0
+            
+        latest_gold = combined['Gold'].iloc[-1]
+        latest_inr = combined['INR'].iloc[-1]
+        
+        rate_24k = ((latest_gold * latest_inr) / 31.1034) * 1.15
         m = {"24K": 1.0, "22K": (22/24), "18K": (18/24)}
+        
         return rate_24k * m.get(purity, 1.0)
     except:
         return 0.0
 
-# --- PDF GENERATOR (LOCAL FONT VERSION) ---
+# --- PDF GENERATOR (CRASH-PROOF VERSION) ---
 def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     pdf = FPDF()
     pdf.add_page()
     
-    # Safely load the font you uploaded to GitHub
-    font_path = "Roboto-Regular.ttf"
+    font_family = "helvetica"
     
-    try:
-        pdf.add_font("Roboto", "", font_path)
-        font_family = "Roboto"
-    except Exception as e:
-        # Emergency fallback just in case the file isn't uploaded yet
-        st.error(f"⚠️ Could not load font. Make sure '{font_path}' is uploaded to GitHub.")
-        font_family = "helvetica"
-
     # Header
-    pdf.set_font(font_family, "", 18)
+    pdf.set_font(font_family, "B", 18)
     pdf.cell(0, 10, "GOLD PORTFOLIO & BILL RECEIPT", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font(font_family, "", 10)
+    pdf.set_font(font_family, "I", 10)
     pdf.cell(0, 8, f"Generated on: {datetime.date.today().strftime('%B %d, %Y')}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
     # Summary
-    pdf.set_font(font_family, "", 14)
+    pdf.set_font(font_family, "B", 14)
     pdf.cell(0, 10, "BILL SUMMARY", new_x="LMARGIN", new_y="NEXT")
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
@@ -82,44 +87,38 @@ def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     pdf.set_font(font_family, "", 12)
     pdf.cell(60, 8, "Total Weight:")
     pdf.cell(0, 8, f"{t_wt:.3f} g", new_x="LMARGIN", new_y="NEXT")
-    
     pdf.cell(60, 8, "Raw Gold Value:")
-    # Now we can safely use the ₹ symbol!
-    pdf.cell(0, 8, f"₹ {t_gold_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
-    
+    pdf.cell(0, 8, f"Rs. {t_gold_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(60, 8, "Making Charges:")
-    pdf.cell(0, 8, f"₹ {t_mak:,.2f}", new_x="LMARGIN", new_y="NEXT")
-    
+    pdf.cell(0, 8, f"Rs. {t_mak:,.2f}", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(60, 8, "GST (3%):")
-    pdf.cell(0, 8, f"₹ {gst_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"Rs. {gst_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
     
     pdf.ln(2)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
     
     # Grand Total
-    pdf.set_font(font_family, "", 14)
+    pdf.set_font(font_family, "B", 14)
     pdf.cell(60, 10, "GRAND TOTAL PAYABLE:")
-    pdf.cell(0, 10, f"₹ {grand_tot:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 10, f"Rs. {grand_tot:,.2f}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(10)
     
     # Breakdown
-    pdf.set_font(font_family, "", 14)
+    pdf.set_font(font_family, "B", 14)
     pdf.cell(0, 10, "ITEMIZED BREAKDOWN", new_x="LMARGIN", new_y="NEXT")
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
     
     for item in item_list:
-        pdf.set_font(font_family, "", 11)
+        pdf.set_font(font_family, "B", 11)
         pdf.cell(0, 7, f"Purchase Date: {item['Date']}  |  Purity: {item['Purity']}", new_x="LMARGIN", new_y="NEXT")
-        
         pdf.set_font(font_family, "", 10)
-        pdf.cell(0, 6, f"Rate Applied: ₹ {item['Rate (₹)']:.3f} per gram", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 6, f"Raw Value: ₹ {item['Gold Value']:,.2f}  |  Making Charge: ₹ {item['Making']:,.2f}", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 6, f"Rate Applied: Rs. {item['Rate (₹)']:.3f} per gram", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 6, f"Raw Value: Rs. {item['Gold Value']:,.2f}  |  Making Charge: Rs. {item['Making']:,.2f}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
         
     return bytes(pdf.output())
-
 
 # --- UI LAYOUT ---
 st.title("🪙 Bullion-Verified Gold Calculator")
