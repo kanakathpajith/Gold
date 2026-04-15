@@ -50,33 +50,21 @@ def get_historical_rate(date_obj, purity):
     except:
         return 0.0
 
-# --- PDF GENERATOR (WITH RUPEE SYMBOL SUPPORT) ---
+# --- PDF GENERATOR (LOCAL FONT VERSION) ---
 def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
-    font_path = "Roboto-Regular.ttf"
-    
-    # 1. Safe download logic with size checking to prevent corrupted files
-    if not os.path.exists(font_path) or os.path.getsize(font_path) < 50000:
-        # Using Google's highly reliable font repository
-        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
-        response = requests.get(font_url)
-        
-        if response.status_code == 200:
-            with open(font_path, 'wb') as f:
-                f.write(response.content)
-        else:
-            # Fallback if download fails (will use "INR" instead of "₹" to prevent crashing)
-            st.error("⚠️ Font download failed. PDF generation may have formatting issues.")
-
     pdf = FPDF()
     pdf.add_page()
     
-    # 2. Load the font securely
+    # Safely load the font you uploaded to GitHub
+    font_path = "Roboto-Regular.ttf"
+    
     try:
         pdf.add_font("Roboto", "", font_path)
         font_family = "Roboto"
-    except Exception:
-        # Ultimate fallback if the font still fails to load
-        font_family = "helvetica" 
+    except Exception as e:
+        # Emergency fallback just in case the file isn't uploaded yet
+        st.error(f"⚠️ Could not load font. Make sure '{font_path}' is uploaded to GitHub.")
+        font_family = "helvetica"
 
     # Header
     pdf.set_font(font_family, "", 18)
@@ -94,10 +82,14 @@ def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     pdf.set_font(font_family, "", 12)
     pdf.cell(60, 8, "Total Weight:")
     pdf.cell(0, 8, f"{t_wt:.3f} g", new_x="LMARGIN", new_y="NEXT")
+    
     pdf.cell(60, 8, "Raw Gold Value:")
+    # Now we can safely use the ₹ symbol!
     pdf.cell(0, 8, f"₹ {t_gold_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    
     pdf.cell(60, 8, "Making Charges:")
     pdf.cell(0, 8, f"₹ {t_mak:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    
     pdf.cell(60, 8, "GST (3%):")
     pdf.cell(0, 8, f"₹ {gst_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
     
@@ -105,6 +97,7 @@ def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
     
+    # Grand Total
     pdf.set_font(font_family, "", 14)
     pdf.cell(60, 10, "GRAND TOTAL PAYABLE:")
     pdf.cell(0, 10, f"₹ {grand_tot:,.2f}", new_x="LMARGIN", new_y="NEXT")
@@ -119,13 +112,15 @@ def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     for item in item_list:
         pdf.set_font(font_family, "", 11)
         pdf.cell(0, 7, f"Purchase Date: {item['Date']}  |  Purity: {item['Purity']}", new_x="LMARGIN", new_y="NEXT")
+        
         pdf.set_font(font_family, "", 10)
         pdf.cell(0, 6, f"Rate Applied: ₹ {item['Rate (₹)']:.3f} per gram", new_x="LMARGIN", new_y="NEXT")
         pdf.cell(0, 6, f"Raw Value: ₹ {item['Gold Value']:,.2f}  |  Making Charge: ₹ {item['Making']:,.2f}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
         
     return bytes(pdf.output())
-    
+
+
 # --- UI LAYOUT ---
 st.title("🪙 Bullion-Verified Gold Calculator")
 st.info("Live rates are currently being sourced from bullions.co.in for maximum reliability.")
