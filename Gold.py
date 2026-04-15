@@ -64,62 +64,78 @@ def get_historical_rate(date_obj, purity):
     except:
         return 0.0
 
-# --- PDF GENERATOR (CRASH-PROOF VERSION) ---
+# --- PDF GENERATOR (WITH RUPEE SYMBOL U+20B9) ---
 def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
+    # 1. Download a Unicode-friendly font (Roboto) that has the ₹ symbol
+    font_path = "Roboto-Regular.ttf"
+    if not os.path.exists(font_path) or os.path.getsize(font_path) < 50000:
+        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
+        response = requests.get(font_url)
+        with open(font_path, 'wb') as f:
+            f.write(response.content)
+
     pdf = FPDF()
     pdf.add_page()
     
-    font_family = "helvetica"
+    # 2. Add the font to FPDF
+    pdf.add_font("Roboto", "", font_path)
+    
+    # Define the Rupee symbol explicitly via Unicode
+    rupee = "\u20B9"
     
     # Header
-    pdf.set_font(font_family, "B", 18)
+    pdf.set_font("Roboto", "", 18)
     pdf.cell(0, 10, "GOLD PORTFOLIO & BILL RECEIPT", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font(font_family, "I", 10)
+    pdf.set_font("Roboto", "", 10)
     pdf.cell(0, 8, f"Generated on: {datetime.date.today().strftime('%B %d, %Y')}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
     # Summary
-    pdf.set_font(font_family, "B", 14)
+    pdf.set_font("Roboto", "", 14)
     pdf.cell(0, 10, "BILL SUMMARY", new_x="LMARGIN", new_y="NEXT")
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
     
-    pdf.set_font(font_family, "", 12)
+    pdf.set_font("Roboto", "", 12)
     pdf.cell(60, 8, "Total Weight:")
     pdf.cell(0, 8, f"{t_wt:.3f} g", new_x="LMARGIN", new_y="NEXT")
+    
     pdf.cell(60, 8, "Raw Gold Value:")
-    pdf.cell(0, 8, f"Rs. {t_gold_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"{rupee} {t_gold_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    
     pdf.cell(60, 8, "Making Charges:")
-    pdf.cell(0, 8, f"Rs. {t_mak:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"{rupee} {t_mak:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    
     pdf.cell(60, 8, "GST (3%):")
-    pdf.cell(0, 8, f"Rs. {gst_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"{rupee} {gst_val:,.2f}", new_x="LMARGIN", new_y="NEXT")
     
     pdf.ln(2)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
     
     # Grand Total
-    pdf.set_font(font_family, "B", 14)
+    pdf.set_font("Roboto", "", 14)
     pdf.cell(60, 10, "GRAND TOTAL PAYABLE:")
-    pdf.cell(0, 10, f"Rs. {grand_tot:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 10, f"{rupee} {grand_tot:,.2f}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(10)
     
     # Breakdown
-    pdf.set_font(font_family, "B", 14)
+    pdf.set_font("Roboto", "", 14)
     pdf.cell(0, 10, "ITEMIZED BREAKDOWN", new_x="LMARGIN", new_y="NEXT")
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
     
     for item in item_list:
-        pdf.set_font(font_family, "B", 11)
+        pdf.set_font("Roboto", "", 12)
         pdf.cell(0, 7, f"Purchase Date: {item['Date']}  |  Purity: {item['Purity']}", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font(font_family, "", 10)
-        pdf.cell(0, 6, f"Rate Applied: Rs. {item['Rate (₹)']:.3f} per gram", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 6, f"Raw Value: Rs. {item['Gold Value']:,.2f}  |  Making Charge: Rs. {item['Making']:,.2f}", new_x="LMARGIN", new_y="NEXT")
+        
+        pdf.set_font("Roboto", "", 10)
+        # Ensure the key matches exactly what is in your dataframe definition
+        pdf.cell(0, 6, f"Rate Applied: {rupee} {item['Rate (₹)']:.3f} per gram", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 6, f"Raw Value: {rupee} {item['Gold Value']:,.2f}  |  Making Charge: {rupee} {item['Making']:,.2f}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
         
     return bytes(pdf.output())
-
 # --- UI LAYOUT ---
 st.title("🪙 Bullion-Verified Gold Calculator")
 st.info("Live rates are currently being sourced from bullions.co.in for maximum reliability.")
