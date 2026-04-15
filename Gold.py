@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 import yfinance as yf
 import re
-import os  # <-- This is the missing piece that caused the error!
+import os
 from fpdf import FPDF
 
 # --- CONFIGURATION ---
@@ -67,7 +67,6 @@ def get_historical_rate(date_obj, purity):
 def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     font_path = "Roboto-Regular.ttf"
     
-    # Download the font if it doesn't exist or is corrupted
     if not os.path.exists(font_path) or os.path.getsize(font_path) < 50000:
         font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
         response = requests.get(font_url)
@@ -134,18 +133,22 @@ def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     return bytes(pdf.output())
 
 # --- UI LAYOUT ---
-st.title("🪙 Bullion-Verified Gold Calculator")
-st.info("Live rates are currently being sourced from bullions.co.in for maximum reliability.")
+st.title("🪙 Indian Gold Portfolio Tracker")
+st.info("Rates are sourced live. If a fetched rate looks incorrect, you can manually override it in the table below.")
 
 live_now = fetch_bullion_co_in_rates()
 
-st.subheader("Purchase Entry")
+# --- PORTFOLIO EDITOR WITH MANUAL OVERRIDE ---
+st.subheader("Purchase Entry & Adjustments")
+st.write("Leave 'Custom Rate' as 0.0 to automatically fetch the market price, or type your own rate to override it.")
+
 if 'portfolio' not in st.session_state:
     st.session_state.portfolio = pd.DataFrame({
         "Date": [datetime.date(2026, 4, 10), datetime.date.today()],
         "Purity": ["22K", "22K"],
         "Weight (g)": [12.000, 10.000],
-        "Making %": [12.000, 12.000]
+        "Making %": [12.000, 12.000],
+        "Custom Rate (₹)": [0.000, 0.000] # New override column
     })
 
 edited_df = st.data_editor(
@@ -154,21 +157,26 @@ edited_df = st.data_editor(
         "Date": st.column_config.DateColumn("Date"),
         "Purity": st.column_config.SelectboxColumn("Purity", options=["24K", "22K", "18K"]),
         "Weight (g)": st.column_config.NumberColumn("Weight", format="%.3f"),
-        "Making %": st.column_config.NumberColumn("Making %", format="%.3f")
+        "Making %": st.column_config.NumberColumn("Making %", format="%.3f"),
+        "Custom Rate (₹)": st.column_config.NumberColumn("Custom Rate (₹)", min_value=0.0, format="%.3f")
     },
     num_rows="dynamic", use_container_width=True
 )
 
-if st.button("Calculate Final Price & Analysis", type="primary"):
+if st.button("🧮 Calculate Final Price & Analysis", type="primary"):
     data = []
     t_gold, t_making, t_weight = 0.0, 0.0, 0.0
     
     with st.spinner("Fetching and calculating rates..."):
         for _, row in edited_df.iterrows():
-            if row['Date'] == datetime.date.today():
-                rate = live_now.get(row['Purity'], 0.0)
+            
+            # --- RATE DECISION LOGIC ---
+            if row['Custom Rate (₹)'] > 0:
+                rate = float(row['Custom Rate (₹)']) # Use Manual Override
+            elif row['Date'] == datetime.date.today():
+                rate = live_now.get(row['Purity'], 0.0) # Use Web Scraper
             else:
-                rate = get_historical_rate(row['Date'], row['Purity'])
+                rate = get_historical_rate(row['Date'], row['Purity']) # Use History API
                 
             val = rate * row['Weight (g)']
             mak = val * (row['Making %'] / 100)
