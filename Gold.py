@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import yfinance as yf
 import re
+import os  # <-- This is the missing piece that caused the error!
 from fpdf import FPDF
 
 # --- CONFIGURATION ---
@@ -37,7 +38,6 @@ def fetch_bullion_co_in_rates():
 # --- HISTORICAL DATA (HOLIDAY PROOF) ---
 @st.cache_data(show_spinner=False)
 def get_historical_rate(date_obj, purity):
-    # Widen the search window to 7 days to easily clear long weekends
     start = date_obj - datetime.timedelta(days=7)
     end = date_obj + datetime.timedelta(days=1)
     
@@ -48,7 +48,6 @@ def get_historical_rate(date_obj, purity):
         if g.empty or curr.empty: 
             return 0.0
             
-        # Combine datasets and carry the last known price forward over weekends/holidays
         combined = pd.DataFrame({'Gold': g['Close'], 'INR': curr['Close']}).ffill().dropna()
         
         if combined.empty:
@@ -66,8 +65,9 @@ def get_historical_rate(date_obj, purity):
 
 # --- PDF GENERATOR (WITH RUPEE SYMBOL U+20B9) ---
 def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
-    # 1. Download a Unicode-friendly font (Roboto) that has the ₹ symbol
     font_path = "Roboto-Regular.ttf"
+    
+    # Download the font if it doesn't exist or is corrupted
     if not os.path.exists(font_path) or os.path.getsize(font_path) < 50000:
         font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
         response = requests.get(font_url)
@@ -77,10 +77,7 @@ def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
     pdf = FPDF()
     pdf.add_page()
     
-    # 2. Add the font to FPDF
     pdf.add_font("Roboto", "", font_path)
-    
-    # Define the Rupee symbol explicitly via Unicode
     rupee = "\u20B9"
     
     # Header
@@ -130,12 +127,12 @@ def create_pdf_receipt(t_wt, t_gold_val, t_mak, gst_val, grand_tot, item_list):
         pdf.cell(0, 7, f"Purchase Date: {item['Date']}  |  Purity: {item['Purity']}", new_x="LMARGIN", new_y="NEXT")
         
         pdf.set_font("Roboto", "", 10)
-        # Ensure the key matches exactly what is in your dataframe definition
         pdf.cell(0, 6, f"Rate Applied: {rupee} {item['Rate (₹)']:.3f} per gram", new_x="LMARGIN", new_y="NEXT")
         pdf.cell(0, 6, f"Raw Value: {rupee} {item['Gold Value']:,.2f}  |  Making Charge: {rupee} {item['Making']:,.2f}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
         
     return bytes(pdf.output())
+
 # --- UI LAYOUT ---
 st.title("🪙 Bullion-Verified Gold Calculator")
 st.info("Live rates are currently being sourced from bullions.co.in for maximum reliability.")
